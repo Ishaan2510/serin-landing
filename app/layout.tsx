@@ -1,13 +1,23 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Geist, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist",
+});
+
+const instrumentSerif = Instrument_Serif({
+  weight: "400",
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+  variable: "--font-instrument-serif",
+});
 
 export const metadata: Metadata = {
-  title: "Serin — AI interviews that feel human",
+  title: "Serin — Connecting skills with the opportunities they deserve",
   description:
-    "Serin is a generative AI interview platform powered by large language models. Conduct structured, scalable, signal-rich interviews on autopilot.",
+    "An agentic interview platform. AI-powered job creation, live interviews with voice activity detection, and intelligent application tracking — built for modern recruiting teams.",
 };
 
 export default function RootLayout({
@@ -16,8 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={inter.className}>{children}</body>
+    <html lang="en" className={`${geist.variable} ${instrumentSerif.variable}`}>
+      <body className="font-sans">{children}</body>
     </html>
   );
 }

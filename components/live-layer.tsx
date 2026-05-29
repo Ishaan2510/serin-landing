@@ -11,11 +11,24 @@ const NAMES = [
 ];
 
 const COLORS = [
-  "#a78bfa", "#60a5fa", "#34d399", "#fbbf24", "#f472b6",
-  "#fb7185", "#22d3ee", "#a3e635", "#facc15",
+  "#C4553A", "#C4903A", "#4A8C5C", "#6B8CA3", "#8B6B99", "#A0785A",
 ];
 
-type CursorState = { x: number; y: number; name: string; color: string };
+const SECTION_NAMES: Record<string, string> = {
+  hero: "the hero",
+  features: "Features",
+  how: "How it works",
+  testimonials: "Testimonials",
+  cta: "Reserve early access",
+};
+
+type CursorState = {
+  x: number;        // fraction within the section's bounding box
+  y: number;        // fraction within the section's bounding box
+  section: string;
+  name: string;
+  color: string;
+};
 type PresenceState = { user: string; name: string; color: string; online_at: string };
 type Notification = { id: number; name: string; color: string };
 
@@ -39,23 +52,56 @@ function getOrCreateIdentity() {
   return { user, name, color };
 }
 
+function findSectionAtPoint(clientX: number, clientY: number) {
+  // Get the section element under this client point
+  const el = document.elementFromPoint(clientX, clientY);
+  if (!el) return null;
+  const section = el.closest("section[id], [data-section]") as HTMLElement | null;
+  if (!section) return null;
+  const id = section.id || section.dataset.section;
+  if (!id) return null;
+  const rect = section.getBoundingClientRect();
+  // Position within the section
+  const x = (clientX - rect.left) / rect.width;
+  const y = (clientY - rect.top) / rect.height;
+  return { id, x, y };
+}
+
+function getMySection(): string | null {
+  // Section under the center of my viewport
+  const mid = findSectionAtPoint(window.innerWidth / 2, window.innerHeight / 2);
+  return mid?.id || null;
+}
+
 export function LiveLayer() {
   const [cursors, setCursors] = useState<Record<string, CursorState>>({});
   const [onlineCount, setOnlineCount] = useState(1);
   const [reserveCount, setReserveCount] = useState(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [me, setMe] = useState<{ user: string; name: string; color: string } | null>(null);
+  const [mySection, setMySection] = useState<string | null>(null);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const subscribedRef = useRef(false);
   const lastBroadcastRef = useRef(0);
   const notifIdRef = useRef(0);
 
-  // Init identity on mount (client only, avoids hydration mismatch)
   useEffect(() => {
     setMe(getOrCreateIdentity());
   }, []);
 
-  // Subscribe to the realtime channel
+  // Track which section the viewer is currently looking at
+  useEffect(() => {
+    const update = () => setMySection(getMySection());
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [me]);
+
   useEffect(() => {
     if (!me) return;
 
@@ -75,6 +121,7 @@ export function LiveLayer() {
           [payload.user]: {
             x: payload.x,
             y: payload.y,
+            section: payload.section,
             name: payload.name,
             color: payload.color,
           },
@@ -88,6 +135,7 @@ export function LiveLayer() {
         });
       })
       .on("broadcast", { event: "reserve" }, ({ payload }) => {
+        if (payload.user === me.user) return;
         setReserveCount((c) => c + 1);
         const id = ++notifIdRef.current;
         setNotifications((prev) => [
@@ -100,6 +148,7 @@ export function LiveLayer() {
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
+          subscribedRef.current = true;
           await channel.track({
             user: me.user,
             name: me.name,
@@ -112,25 +161,32 @@ export function LiveLayer() {
     channelRef.current = channel;
 
     return () => {
-      channel.send({
-        type: "broadcast",
-        event: "cursor_leave",
-        payload: { user: me.user },
-      });
+      subscribedRef.current = false;
+      if (channel.state === "joined") {
+        channel.send({
+          type: "broadcast",
+          event: "cursor_leave",
+          payload: { user: me.user },
+        });
+      }
       supabase.removeChannel(channel);
     };
   }, [me]);
 
-  // Broadcast my cursor position (throttled)
+  // Broadcast cursor as a position within the section it's hovering over
   useEffect(() => {
     if (!me) return;
 
     const handleMove = (e: MouseEvent) => {
       const now = Date.now();
-      if (now - lastBroadcastRef.current < 50) return; // throttle to ~20/sec
+      if (now - lastBroadcastRef.current < 50) return;
       lastBroadcastRef.current = now;
       const ch = channelRef.current;
-      if (!ch) return;
+      if (!ch || !subscribedRef.current) return;
+
+      const loc = findSectionAtPoint(e.clientX, e.clientY);
+      if (!loc) return;
+
       ch.send({
         type: "broadcast",
         event: "cursor",
@@ -138,8 +194,9 @@ export function LiveLayer() {
           user: me.user,
           name: me.name,
           color: me.color,
-          x: e.clientX / window.innerWidth,
-          y: (e.clientY + window.scrollY) / document.documentElement.scrollHeight,
+          section: loc.id,
+          x: loc.x,
+          y: loc.y,
         },
       });
     };
@@ -148,9 +205,8 @@ export function LiveLayer() {
     return () => window.removeEventListener("mousemove", handleMove);
   }, [me]);
 
-  // Listen for reserve clicks anywhere on the page
   const handleReserve = useCallback(() => {
-    if (!me || !channelRef.current) return;
+    if (!me || !channelRef.current || !subscribedRef.current) return;
     setReserveCount((c) => c + 1);
     const id = ++notifIdRef.current;
     setNotifications((prev) => [...prev, { id, name: me.name, color: me.color }]);
@@ -175,32 +231,76 @@ export function LiveLayer() {
     return () => document.removeEventListener("click", handler);
   }, [handleReserve]);
 
+  // Compute cursors to render (only those in MY current section)
+  const cursorsInMySection = Object.entries(cursors).filter(
+    ([, c]) => c.section === mySection,
+  );
+  // Visitors elsewhere (for the "viewing other sections" indicator)
+  const elsewhere = Object.values(cursors).filter((c) => c.section !== mySection);
+  // Group elsewhere by section
+  const elsewhereBySection: Record<string, CursorState[]> = {};
+  elsewhere.forEach((c) => {
+    if (!elsewhereBySection[c.section]) elsewhereBySection[c.section] = [];
+    elsewhereBySection[c.section].push(c);
+  });
+
   return (
     <>
-      {/* Live presence pill, top-right */}
-      <div className="fixed top-6 right-6 z-50 flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/80 backdrop-blur px-3 py-1.5 text-xs text-zinc-300">
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+      {/* Presence pill */}
+      <div className="fixed top-5 right-5 z-50 flex items-center gap-2 rounded-full glass px-3 py-1.5 text-xs text-foreground/80 font-medium">
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
         </span>
-        <span className="font-medium">{onlineCount}</span>
-        <span className="text-zinc-500">exploring Serin</span>
+        <span className="tabular-nums">{onlineCount}</span>
+        <span className="text-muted-foreground">exploring Serin</span>
       </div>
 
-      {/* Reserve counter, below the pill */}
+      {/* Reserve counter */}
       {reserveCount > 0 && (
-        <div className="fixed top-16 right-6 z-50 rounded-full border border-zinc-800 bg-zinc-950/80 backdrop-blur px-3 py-1.5 text-xs text-zinc-400">
-          <span className="font-medium text-zinc-200">{reserveCount}</span> reservation
-          {reserveCount === 1 ? "" : "s"} this session
+        <div className="fixed top-[60px] right-5 z-50 rounded-full glass px-3 py-1.5 text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground tabular-nums">{reserveCount}</span>{" "}
+          reservation{reserveCount === 1 ? "" : "s"} this session
         </div>
       )}
 
-      {/* Notification stack, bottom-right */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm">
+      {/* "Viewing other sections" indicator */}
+      {elsewhere.length > 0 && (
+        <div className="fixed bottom-5 left-5 z-50 flex flex-col gap-1.5 max-w-[260px]">
+          {Object.entries(elsewhereBySection).slice(0, 3).map(([sectionId, people]) => (
+            <div
+              key={sectionId}
+              className="rounded-lg glass px-3 py-2 text-xs text-muted-foreground"
+            >
+              <div className="flex items-center gap-2">
+                <div className="flex -space-x-1">
+                  {people.slice(0, 3).map((p, i) => (
+                    <div
+                      key={i}
+                      className="h-4 w-4 rounded-full ring-2 ring-background"
+                      style={{ background: p.color }}
+                    />
+                  ))}
+                </div>
+                <span>
+                  {people.length === 1 ? (
+                    <><span className="font-medium text-foreground">{people[0].name}</span> on {SECTION_NAMES[sectionId] || sectionId}</>
+                  ) : (
+                    <><span className="font-medium text-foreground">{people.length}</span> on {SECTION_NAMES[sectionId] || sectionId}</>
+                  )}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Notifications */}
+      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm">
         {notifications.map((n) => (
           <div
             key={n.id}
-            className="animate-in slide-in-from-right-4 fade-in duration-300 rounded-lg border border-zinc-800 bg-zinc-950/95 backdrop-blur px-4 py-3 shadow-lg text-sm"
+            className="animate-in slide-in-from-right-4 fade-in duration-300 rounded-xl glass px-4 py-3 text-sm"
           >
             <div className="flex items-center gap-3">
               <div
@@ -208,42 +308,49 @@ export function LiveLayer() {
                 style={{ backgroundColor: n.color }}
               />
               <span>
-                <span className="font-medium text-zinc-100">{n.name}</span>
-                <span className="text-zinc-400"> reserved early access</span>
+                <span className="font-semibold text-foreground">{n.name}</span>
+                <span className="text-muted-foreground"> reserved early access</span>
               </span>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Remote cursors */}
-      {Object.entries(cursors).map(([id, c]) => (
-        <div
-          key={id}
-          className="pointer-events-none fixed z-40 transition-transform duration-75"
-          style={{
-            left: `${c.x * 100}vw`,
-            top: `${c.y * document.documentElement.scrollHeight}px`,
-            transform: "translate(-2px, -2px)",
-          }}
-        >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path
-              d="M2.5 2L17 8.5L9 11L7 17L2.5 2Z"
-              fill={c.color}
-              stroke="rgba(0,0,0,0.4)"
-              strokeWidth="1"
-              strokeLinejoin="round"
-            />
-          </svg>
+      {/* Cursors: only render those in the same section as me, positioned relative to the section box */}
+      {mySection && cursorsInMySection.map(([id, c]) => {
+        const section = document.getElementById(c.section) || document.querySelector(`[data-section="${c.section}"]`);
+        if (!section) return null;
+        const rect = section.getBoundingClientRect();
+        const left = rect.left + c.x * rect.width;
+        const top = rect.top + c.y * rect.height;
+        return (
           <div
-            className="absolute left-4 top-4 rounded-md px-2 py-0.5 text-xs font-medium text-white whitespace-nowrap shadow"
-            style={{ backgroundColor: c.color }}
+            key={id}
+            className="pointer-events-none fixed z-40"
+            style={{
+              left: `${left}px`,
+              top: `${top}px`,
+              transition: "left 80ms linear, top 80ms linear",
+            }}
           >
-            {c.name}
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none" style={{ display: "block" }}>
+              <path
+                d="M3 2L19 9.5L11.5 12.5L8.5 19.5L3 2Z"
+                fill={c.color}
+                stroke="rgba(0,0,0,0.4)"
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <div
+              className="absolute left-5 top-5 rounded-md px-2 py-0.5 text-[11px] font-medium text-white whitespace-nowrap shadow"
+              style={{ backgroundColor: c.color }}
+            >
+              {c.name}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </>
   );
 }
