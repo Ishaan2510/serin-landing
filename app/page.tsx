@@ -37,12 +37,31 @@ export default function Home() {
       {/* Nav */}
       <nav className="relative z-10 max-w-7xl mx-auto px-6 md:px-10 py-6 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="relative h-7 w-7">
-            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[oklch(0.65_0.18_45)] to-[oklch(0.4_0.12_35)]" />
-            <div className="absolute inset-[3px] rounded-full bg-background" />
-            <div className="absolute inset-[6px] rounded-full bg-gradient-to-br from-[oklch(0.7_0.16_45)] to-[oklch(0.5_0.14_35)]" />
-          </div>
-          <span className="text-base font-semibold tracking-tight">Serin</span>
+          <svg
+            width="28"
+            height="20"
+            viewBox="0 0 28 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="text-foreground"
+            aria-label="Serin logo"
+          >
+            <path
+              d="M2 18 A 12 12 0 0 1 26 18"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              fill="none"
+            />
+            <path
+              d="M7 18 A 7 7 0 0 1 21 18"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              fill="none"
+            />
+          </svg>
+          <span className="text-lg font-serif tracking-tight">Serin</span>
         </div>
         <div className="hidden md:flex items-center gap-9 text-sm text-muted-foreground">
           <a href="#features" className="hover:text-foreground transition-colors">Features</a>
@@ -230,11 +249,30 @@ export default function Home() {
       <footer className="relative z-10 max-w-7xl mx-auto px-6 md:px-10 py-12 border-t border-border">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 text-sm text-muted-foreground">
           <div className="flex items-center gap-3">
-            <div className="relative h-5 w-5">
-              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[oklch(0.65_0.18_45)] to-[oklch(0.4_0.12_35)]" />
-              <div className="absolute inset-[2px] rounded-full bg-background" />
-              <div className="absolute inset-[4px] rounded-full bg-gradient-to-br from-[oklch(0.7_0.16_45)] to-[oklch(0.5_0.14_35)]" />
-            </div>
+            <svg
+              width="22"
+              height="16"
+              viewBox="0 0 28 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className="text-foreground"
+              aria-label="Serin logo"
+            >
+              <path
+                d="M2 18 A 12 12 0 0 1 26 18"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                fill="none"
+              />
+              <path
+                d="M7 18 A 7 7 0 0 1 21 18"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </svg>
             <span>© 2026 Serin · Made on Earth, by humans</span>
           </div>
           <div className="flex gap-7">
